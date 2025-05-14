@@ -1,0 +1,7 @@
+ERC report (22/01/2020 15:17:10, Encoding UTF8 )
+
+***** Sheet /
+ErrType(12): Different net assigned to a shared pin in another unit of the same component
+    @(129.54 mm, 43.18 mm): Pin ~ on U1 is connected to both /USB_D+ and /USB_D-
+
+ ** ERC messages: 1  Errors 1  Warnings 0

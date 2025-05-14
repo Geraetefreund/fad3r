@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "teensy")(type "Legacy")(uri "${KIPRJMOD}/teensy_library-master/teensy.lib")(options "")(descr ""))
+  (lib (name "midi-fader-alps-100mm-rescue")(type "Legacy")(uri "${KIPRJMOD}/midi fader alps 100mm-rescue.lib")(options "")(descr ""))
+)
