@@ -11,7 +11,7 @@ Store current CC/Channel values to preset:
 ```F0 7D 41 <preset> F7```
 
 Set CCs and Channels for preset (remember dec to hex!):  
-```F0 7D 42 <preset> <cc1> <ch1> <cc2> <ch2> <cc3> <ch3> F7```
+```F0 7D 42 <preset> <cc1> <cc2> <cc3> <ch1> <ch2> <ch3> F7```
 
 Dump preset for debugging:  
 ``` F0 7D 43 <preset> F7```

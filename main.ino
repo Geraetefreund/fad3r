@@ -31,8 +31,6 @@ bool sysexHandled = false;
 // Previous analog values for change detection and smoothing
 int oldValue[NUM_FADERS] = {0, 0, 0};
 
-
-
 // Calling usbMIDI.getType() in every loop iteration is too laggy
 // simple millis timer to the rescue.
 unsigned long lastSysExCheck = 0;
@@ -64,7 +62,6 @@ void loop() {
       usbMIDI.sendControlChange(cc[i], val, channel[i]);
     }
   }
-  
 }
 
 // Reads fader value and checks for significant change
@@ -86,14 +83,19 @@ void loadPreset(uint8_t preset) {
   }
 }
 
+// --- ADDED
+void applyPreset(uint8_t preset) {
+  loadPreset(preset);
+  currentPreset = preset;
+  EEPROM.update(ACTIVE_PRESET_ADDR, preset);
+}
 
-void savePreset(uint8_t preset) { 
+void savePreset(uint8_t preset) {
   if (preset >= NUM_PRESETS) return;
   int base = preset * BYTES_PER_PRESET;
   for (int i = 0; i < NUM_FADERS; i++) {
     EEPROM.update(base + i, cc[i]);
     EEPROM.update(base + NUM_FADERS + i, channel[i]);
-    
   }
 }
 
@@ -113,8 +115,6 @@ void dumpPreset(uint8_t preset) {
   usbMIDI.sendSysEx(10, data, true);
 }
 
-
-
 void handleSysEx() {
   if (usbMIDI.getType() == usbMIDI.SystemExclusive && !sysexHandled) {
     const uint8_t* data = usbMIDI.getSysExArray();
@@ -127,13 +127,11 @@ void handleSysEx() {
       switch (command) {
         case 0x40: // Load preset
           if (preset < NUM_PRESETS) {
-            loadPreset(preset);
-            EEPROM.update(ACTIVE_PRESET_ADDR, preset);
-            currentPreset = preset;
+            applyPreset(preset);  // --- CHANGED
           }
           break;
 
-        case 0x41: //Save current to preset
+        case 0x41: // Save current to preset
           if (preset < NUM_PRESETS) {
             savePreset(preset);
           }
@@ -143,13 +141,14 @@ void handleSysEx() {
           if (len == 11 && preset < NUM_PRESETS) {
             int base = preset * BYTES_PER_PRESET;
             for (int i = 0; i < NUM_FADERS; i++) {
-              EEPROM.update(base + 1, data[4 +i]); // CC
-              EEPROM.update(base + NUM_FADERS + i, data[4 + NUM_FADERS +i]); //CH
+              EEPROM.update(base + i, data[4 + i]);                       // --- FIXED: used to be base + 1
+              EEPROM.update(base + NUM_FADERS + i, data[4 + NUM_FADERS + i]);
             }
+            applyPreset(preset); // --- ADDED
           }
           break;
 
-        case 0x43: // dump preset
+        case 0x43: // Dump preset
           if (preset < NUM_PRESETS) {
             dumpPreset(preset);
           }
@@ -157,12 +156,12 @@ void handleSysEx() {
       }
 
       sysexHandled = true;
-   }
+    }
   }
+
   // Reset handler when no SysEx message is active anymore
   if (usbMIDI.getType() != usbMIDI.SystemExclusive) {
     sysexHandled = false;
   }
-  
 }
 
