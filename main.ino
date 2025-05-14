@@ -1,26 +1,36 @@
 //Fad3r
-
-// F0 7D <cc1> <cc2> <cc3> F7 (remember to  convert dec to hex!)
-// F0 7D 15 0B 01 F7  (Fader1=cc21, Fader2=cc11, Fader3=cc01)
+//v0.2 / 2025-05-14
 
 #include <EEPROM.h>
-//#include <Bounce.h>
 
-//EEPROM layout:
+/* EEPROM layout - Teensy LC has 128 avaialble
+Preset      Addr      Contents
+0           0         CC1 CC2 CC3
+            3         CH1 CH2 CH3
+1           6         ...
+...         ...       ...
+Active      24        Current preset
+*/
+const int NUM_FADERS = 3;
+const int NUM_PRESETS = 4;
+const int BYTES_PER_PRESET = 6; // 3 CC + 3 CH
+const int ACTIVE_PRESET_ADDR = NUM_PRESETS * BYTES_PER_PRESET; // stores location pointing to current preset
+
 const int EEPROM_address[3] = {0, 1, 2};
 
 // Fader analog input pins
-const int pins[3] = {A0, A1, A2}; // A0 = Fader 1, A1 = Fader 2, A2 = Fader 3
+const int pins[NUM_FADERS] = {A0, A1, A2}; // A0 = Fader 1, A1 = Fader 2, A2 = Fader 3
 
-// MIDI CC mappings: Fader 1 → CC21, Fader 2 → CC11, Fader 3 → CC1
-uint8_t cc[3] = {21, 11, 1};
+// MIDI CC and MIDI channel mappings
+uint8_t cc[NUM_FADERS];
+uint8_t channel[NUM_FADERS];
+
+uint8_t currentPreset = 0;
+bool sysexHandled = false;
 
 // Previous analog values for change detection and smoothing
-int oldValue[3] = {0, 0, 0};
+int oldValue[NUM_FADERS] = {0, 0, 0};
 
-// MIDI channel to send on (1–16)
-uint8_t midiChan = 1;
-bool sysexHandled = false;
 
 
 // Calling usbMIDI.getType() in every loop iteration is too laggy
@@ -29,13 +39,14 @@ unsigned long lastSysExCheck = 0;
 const unsigned long sysexInterval = 20; // ms
 
 void setup() {
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < NUM_FADERS; i++) {
     pinMode(pins[i], INPUT);
   }
-  // read the cc values from EEPROM
-  for (int i = 0; i < 3; i++) {
-    cc[i] = EEPROM.read(EEPROM_address[i]);
-  }
+
+  currentPreset = EEPROM.read(ACTIVE_PRESET_ADDR);
+  if (currentPreset >= NUM_PRESETS) currentPreset = 0;
+
+  loadPreset(currentPreset);
 }
 
 void loop() {
@@ -46,11 +57,11 @@ void loop() {
     handleSysEx();
   }
 
-  // Fader reading
-  for (int i = 0; i < 3; i++) {
+  // Fader reading and sending
+  for (int i = 0; i < NUM_FADERS; i++) {
     int val = getFaderValue(i);
     if (val < 255) { // 255 means no significant change
-      usbMIDI.sendControlChange(cc[i], val, midiChan);
+      usbMIDI.sendControlChange(cc[i], val, channel[i]);
     }
   }
   
@@ -66,27 +77,92 @@ int getFaderValue(int index) {
   return 255; // No change
 }
 
+void loadPreset(uint8_t preset) {
+  if (preset >= NUM_PRESETS) return;
+  int base = preset * BYTES_PER_PRESET;
+  for (int i = 0; i < NUM_FADERS; i++) {
+    cc[i] = EEPROM.read(base + i);
+    channel[i] = EEPROM.read(base + NUM_FADERS + i);
+  }
+}
+
+
+void savePreset(uint8_t preset) { 
+  if (preset >= NUM_PRESETS) return;
+  int base = preset * BYTES_PER_PRESET;
+  for (int i = 0; i < NUM_FADERS; i++) {
+    EEPROM.update(base + i, cc[i]);
+    EEPROM.update(base + NUM_FADERS + i, channel[i]);
+    
+  }
+}
+
+void dumpPreset(uint8_t preset) {
+  if (preset >= NUM_PRESETS) return;
+  uint8_t data[10];
+  data[0] = 0xF0;
+  data[1] = 0x7D;
+  data[2] = 0x43; // Dump command
+  data[3] = preset;
+  int base = preset * BYTES_PER_PRESET;
+  for (int i = 0; i < NUM_FADERS; i++) {
+    data[4 + i] = EEPROM.read(base + i);  // CC
+    data[4 + NUM_FADERS + i] = EEPROM.read(base + NUM_FADERS + i); // CH
+  }
+  data[10 - 1] = 0xF7;
+  usbMIDI.sendSysEx(10, data, true);
+}
+
+
+
 void handleSysEx() {
   if (usbMIDI.getType() == usbMIDI.SystemExclusive && !sysexHandled) {
     const uint8_t* data = usbMIDI.getSysExArray();
     unsigned int len = usbMIDI.getSysExArrayLength();
 
-    if (len == 6 && data[0] == 0xF0 && data[1] == 0x7D && data[5] == 0xF7) {
-      cc[0] = data[2];
-      cc[1] = data[3];
-      cc[2] = data[4];
+    if (len >= 5 && data[0] == 0xF0 && data[1] == 0x7D && data[len -1] == 0xF7) {
+      uint8_t command = data[2];
+      uint8_t preset = data[3];
 
-      EEPROM.update(EEPROM_address[0], cc[0]);
-      EEPROM.update(EEPROM_address[1], cc[1]);
-      EEPROM.update(EEPROM_address[2], cc[2]);
-      
+      switch (command) {
+        case 0x40: // Load preset
+          if (preset < NUM_PRESETS) {
+            loadPreset(preset);
+            EEPROM.update(ACTIVE_PRESET_ADDR, preset);
+            currentPreset = preset;
+          }
+          break;
+
+        case 0x41: //Save current to preset
+          if (preset < NUM_PRESETS) {
+            savePreset(preset);
+          }
+          break;
+
+        case 0x42: // Set CCs and channels for preset
+          if (len == 11 && preset < NUM_PRESETS) {
+            int base = preset * BYTES_PER_PRESET;
+            for (int i = 0; i < NUM_FADERS; i++) {
+              EEPROM.update(base + 1, data[4 +i]); // CC
+              EEPROM.update(base + NUM_FADERS + i, data[4 + NUM_FADERS +i]); //CH
+            }
+          }
+          break;
+
+        case 0x43: // dump preset
+          if (preset < NUM_PRESETS) {
+            dumpPreset(preset);
+          }
+          break;
+      }
+
       sysexHandled = true;
-    }
+   }
   }
-
   // Reset handler when no SysEx message is active anymore
   if (usbMIDI.getType() != usbMIDI.SystemExclusive) {
     sysexHandled = false;
   }
+  
 }
 
