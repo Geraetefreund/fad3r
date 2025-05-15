@@ -17,8 +17,8 @@ Dump preset: ``` F0 7D 43 <preset> F7```
 
 Returns: ```F0 7D 43 <preset> <cc1> <cc2> <cc3> <ch1> <ch2> <ch3> F7```
 
-Get current preset:
-``` F0 7D 44 00 F7``` returns ```F0 7D 33 <current preset> F7```
+Get current preset: 
+``` F0 7D 44 00 F7``` returns ```F0 7D 44 <current preset> F7```
 
 
 =================
