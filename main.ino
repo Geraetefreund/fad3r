@@ -83,7 +83,7 @@ void loadPreset(uint8_t preset) {
   }
 }
 
-// --- ADDED
+
 void applyPreset(uint8_t preset) {
   loadPreset(preset);
   currentPreset = preset;
@@ -116,60 +116,49 @@ void dumpPreset(uint8_t preset) {
 }
 
 void handleSysEx() {
-  if (usbMIDI.getType() == usbMIDI.SystemExclusive && !sysexHandled) {
+  static uint8_t lastCommand = 0x00;
+  static uint8_t lastPreset = 0xFF;
+
+  if (usbMIDI.getType() == usbMIDI.SystemExclusive) {
     const uint8_t* data = usbMIDI.getSysExArray();
     unsigned int len = usbMIDI.getSysExArrayLength();
 
-    if (len >= 5 && data[0] == 0xF0 && data[1] == 0x7D && data[len -1] == 0xF7) {
+    if (len >= 5 && data[0] == 0xF0 && data[1] == 0x7D && data[len - 1] == 0xF7) {
       uint8_t command = data[2];
       uint8_t preset = data[3];
 
+      // Avoid re-processing the same message repeatedly
+      if (command == lastCommand && preset == lastPreset) return;
+
+      lastCommand = command;
+      lastPreset = preset;
+
       switch (command) {
-        case 0x40: // Load preset
-          if (preset < NUM_PRESETS) {
-            applyPreset(preset);  // --- CHANGED
-          }
-          break;
-
-        case 0x41: // Save current to preset
-          if (preset < NUM_PRESETS) {
-            savePreset(preset);
-          }
-          break;
-
-        case 0x42: // Set CCs and channels for preset
+        case 0x40: applyPreset(preset); break;
+        case 0x41: savePreset(preset); break;
+        case 0x42:
           if (len == 11 && preset < NUM_PRESETS) {
             int base = preset * BYTES_PER_PRESET;
             for (int i = 0; i < NUM_FADERS; i++) {
-              EEPROM.update(base + i, data[4 + i]);                       // --- FIXED: used to be base + 1
+              EEPROM.update(base + i, data[4 + i]);
               EEPROM.update(base + NUM_FADERS + i, data[4 + NUM_FADERS + i]);
             }
-            applyPreset(preset); // --- ADDED
+            applyPreset(preset);
           }
           break;
-
-        case 0x43: // Dump preset
-          if (preset < NUM_PRESETS) {
-            dumpPreset(preset);
-          }
-          break;
-          
-        case 0x44: // get current preset
-          {
-            uint8_t reply[5] = {0xF0, 0x7D, 0x44, currentPreset, 0xF7};
-            usbMIDI.sendSysEx(5, reply, true);
-          }
-          break;
-
+        case 0x43: dumpPreset(preset); break;
+        case 0x44: {
+          uint8_t reply[5] = {0xF0, 0x7D, 0x44, currentPreset, 0xF7};
+          usbMIDI.sendSysEx(5, reply, true);
+        } break;
       }
-
-      sysexHandled = true;
     }
-  }
-
-  // Reset handler when no SysEx message is active anymore
-  if (usbMIDI.getType() != usbMIDI.SystemExclusive) {
-    sysexHandled = false; // does this mean we have to wiggle a fader?
+  } else {
+    // Reset detection when SysEx is no longer active
+    sysexHandled = false;
+    // Reset last command to allow next SysEx message to be processed
+    lastCommand = 0x00;
+    lastPreset = 0xFF;
   }
 }
 
