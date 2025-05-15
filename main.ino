@@ -101,7 +101,7 @@ void savePreset(uint8_t preset) {
 
 void dumpPreset(uint8_t preset) {
   if (preset >= NUM_PRESETS) return;
-  uint8_t data[10];
+  uint8_t data[11]; // oops was 10 before.
   data[0] = 0xF0;
   data[1] = 0x7D;
   data[2] = 0x43; // Dump command
@@ -111,8 +111,8 @@ void dumpPreset(uint8_t preset) {
     data[4 + i] = EEPROM.read(base + i);  // CC
     data[4 + NUM_FADERS + i] = EEPROM.read(base + NUM_FADERS + i); // CH
   }
-  data[10 - 1] = 0xF7;
-  usbMIDI.sendSysEx(10, data, true);
+  data[10] = 0xF7;
+  usbMIDI.sendSysEx(11, data, true);
 }
 
 void handleSysEx() {
@@ -153,6 +153,14 @@ void handleSysEx() {
             dumpPreset(preset);
           }
           break;
+          
+        case 0x44: // get current preset
+          {
+            uint8_t reply[5] = {0xF0, 0x7D, 0x44, currentPreset, 0xF7};
+            usbMIDI.sendSysEx(5, reply, true);
+          }
+          break;
+
       }
 
       sysexHandled = true;
@@ -161,7 +169,7 @@ void handleSysEx() {
 
   // Reset handler when no SysEx message is active anymore
   if (usbMIDI.getType() != usbMIDI.SystemExclusive) {
-    sysexHandled = false;
+    sysexHandled = false; // does this mean we have to wiggle a fader?
   }
 }
 
